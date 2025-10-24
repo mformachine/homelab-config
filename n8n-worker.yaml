@@ -1,0 +1,98 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: n8n-worker
+  namespace: n8n-prod
+spec:
+  replicas: 1 # can increase this for more processing power
+  selector:
+    matchLabels:
+      app: n8n-worker
+  template:
+    metadata:
+      labels:
+        app: n8n-worker
+    spec:
+      volumes:
+        - name: n8n-storage
+          persistentVolumeClaim:
+            claimName: n8n-pvc
+      initContainers:
+        # Wait for PostgreSQL to be ready
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done;']
+        # Wait for Redis to be ready
+        - name: wait-for-redis
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z redis 6379; do echo waiting for redis; sleep 2; done;']
+      containers:
+        - name: n8n-worker
+          image: docker.n8n.io/n8nio/n8n:latest
+          # THIS IS THE KEY COMMAND: Start n8n in worker mode
+          command: ["n8n", "worker"]
+          env:
+            # --- Database Configuration ---
+            # These must be IDENTICAL to our main n8n deployment
+            - name: DB_TYPE
+              value: "postgresdb"
+            - name: DB_POSTGRESDB_HOST
+              value: "postgres"
+            - name: DB_POSTGRESDB_PORT
+              value: "5432"
+            - name: DB_POSTGRESDB_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: n8n-credentials
+                  key: POSTGRES_DB
+            - name: DB_POSTGRESDB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: n8n-credentials
+                  key: POSTGRES_USER
+            - name: DB_POSTGRESDB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: n8n-credentials
+                  key: POSTGRES_PASSWORD
+            
+            # --- Queue Mode Configuration ---
+            # These must be IDENTICAL to our main n8n deployment
+            - name: EXECUTIONS_MODE
+              value: "queue"
+            - name: QUEUE_BULL_REDIS_HOST
+              value: "redis"
+            - name: QUEUE_BULL_REDIS_PORT
+              value: "6379"
+            - name: QUEUE_BULL_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: n8n-credentials
+                  key: REDIS_PASSWORD
+
+            # --- Encryption Key ---
+            # Must be IDENTICAL to your our n8n deployment
+            - name: N8N_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: n8n-credentials
+                  key: N8N_ENCRYPTION_KEY
+
+            # --- General Settings ---
+            - name: GENERIC_TIMEZONE
+              value: "Europe/Berlin"
+            - name: NODE_ENV
+              value: "production"
+            # Note: The worker does not need port, host, protocol, or webhook env vars
+
+          volumeMounts:
+            - name: n8n-storage
+              mountPath: /home/node/.n8n
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
