@@ -69,10 +69,15 @@ echo -e "${YELLOW}Step 4: Waiting for Redis to be ready...${NC}"
 $KUBECTL wait --for=condition=ready pod -l app=redis -n n8n-prod --timeout=120s
 check_status "Redis is ready"
 
-# Apply n8n application
-echo -e "${YELLOW}Step 5: Deploying n8n application...${NC}"
+# Apply n8n
+echo -e "${YELLOW}Step 5a: Deploying n8n application...${NC}"
 $KUBECTL apply -f n8n-app.yaml
 check_status "Applied n8n application"
+
+# Apply n8n worker 
+echo -e "${YELLOW}Step 5b: Deploying n8n worker...${NC}"
+$KUBECTL apply -f n8n-worker.yaml
+check_status "Applied n8n worker"
 
 # Apply NodePort service
 $KUBECTL apply -f n8n-nodeport.yaml
